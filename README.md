@@ -18,6 +18,13 @@ A minimal API framework in Go, Built for performance and simplicity.
 - Error Handling Helpers (`c.AbortWithError`, `c.NotFound`, `c.BadRequest`, `c.InternalServerError`)
 - Rate limiting
 
+## Dependencies
+
+```
+github.com/goccy/go-json
+github.com/julienschmidt/httprouter
+```
+
 ## Installation
 ```bash
 go install github.com/Sudo-Ivan/jacked-api@latest
