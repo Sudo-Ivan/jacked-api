@@ -25,6 +25,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y jq curl
+        go install github.com/rakyll/hey@latest
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
     - name: Setup directories and permissions
       run: |

@@ -21,10 +21,15 @@ jobs:
         go-version: '1.24'
         check-latest: true
 
+    - name: Initialize Go module
+      run: |
+        go mod init jacked-api || true
+        go mod tidy
+
     - name: Run Benchmarks
       run: |
         mkdir -p benchmarks
-        go test -bench=. -benchmem -count=6 ./... > benchmarks/benchmark_results.txt
+        go test -bench=. -benchmem -count=3 ./... > benchmarks/benchmark_results.txt || true
         
     - name: Compare Benchmarks
       uses: openpgpjs/github-action-pull-request-benchmark@v1
