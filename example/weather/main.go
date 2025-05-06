@@ -17,39 +17,39 @@ import (
 	"github.com/Sudo-Ivan/jacked-api/jacked"
 )
 
-// Logger wraps the standard logger with additional functionality
+// Logger is a custom logger that prefixes log messages.
 type Logger struct {
 	*log.Logger
 }
 
-// NewLogger creates a new logger instance
+// NewLogger creates a new Logger instance.
 func NewLogger() *Logger {
 	return &Logger{
 		Logger: log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds),
 	}
 }
 
-// LogRequest logs incoming HTTP requests
+// LogRequest logs incoming HTTP requests.
 func (l *Logger) LogRequest(method, path, remoteAddr string) {
 	l.Printf("[REQUEST] %s %s from %s", method, path, remoteAddr)
 }
 
-// LogError logs error messages
+// LogError logs errors with context.
 func (l *Logger) LogError(err error, context string) {
 	l.Printf("[ERROR] %s: %v", context, err)
 }
 
-// LogInfo logs informational messages
+// LogInfo logs informational messages.
 func (l *Logger) LogInfo(format string, v ...interface{}) {
 	l.Printf("[INFO] "+format, v...)
 }
 
-// LogWeather logs weather data
+// LogWeather logs weather information.
 func (l *Logger) LogWeather(city string, lat, lon float64, temp float64) {
 	l.Printf("[WEATHER] City: %s, Lat: %.6f, Lon: %.6f, Temp: %.1f°C", city, lat, lon, temp)
 }
 
-// Metrics holds server performance metrics
+// Metrics stores various metrics about the server.
 type Metrics struct {
 	TotalRequests   uint64
 	FailedRequests  uint64
@@ -60,7 +60,7 @@ type Metrics struct {
 	lastMinuteHits  []time.Time
 }
 
-// NewMetrics creates a new metrics instance
+// NewMetrics creates a new Metrics instance.
 func NewMetrics() *Metrics {
 	return &Metrics{
 		StartTime:      time.Now(),
@@ -68,7 +68,7 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// RecordRequest records a request and its duration
+// RecordRequest records the duration and success/failure of a request.
 func (m *Metrics) RecordRequest(duration time.Duration, failed bool) {
 	atomic.AddUint64(&m.TotalRequests, 1)
 	if failed {
@@ -78,14 +78,11 @@ func (m *Metrics) RecordRequest(duration time.Duration, failed bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Update average response time
 	m.AverageResponse = (m.AverageResponse*float64(m.TotalRequests-1) + duration.Seconds()) / float64(m.TotalRequests)
 
-	// Record hit for last minute calculation
 	now := time.Now()
 	m.lastMinuteHits = append(m.lastMinuteHits, now)
 
-	// Clean up old hits
 	cutoff := now.Add(-time.Minute)
 	for i, t := range m.lastMinuteHits {
 		if t.After(cutoff) {
@@ -96,26 +93,25 @@ func (m *Metrics) RecordRequest(duration time.Duration, failed bool) {
 	m.LastMinuteHits = uint64(len(m.lastMinuteHits))
 }
 
-// GetUptime returns the server uptime
+// GetUptime returns the server uptime.
 func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.StartTime)
 }
 
-// setSecurityHeaders sets appropriate security headers for the weather application
+// setSecurityHeaders sets various security headers on the HTTP response.
 func setSecurityHeaders(w http.ResponseWriter) {
-	// Set a more permissive CSP that allows necessary inline scripts
 	csp := "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " + // Allow inline scripts and eval for weather app
-		"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " + // Allow inline styles and Pico.css CDN
-		"img-src 'self' data: https:; " + // Allow images from self, data URLs, and HTTPS sources
-		"connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; " + // Allow API connections
-		"font-src 'self'; " + // Allow fonts from self
-		"object-src 'none'; " + // Block plugins
-		"base-uri 'self'; " + // Restrict base URI
-		"form-action 'self'; " + // Restrict form submissions
-		"frame-ancestors 'none'; " + // Prevent framing
-		"block-all-mixed-content; " + // Block mixed content
-		"upgrade-insecure-requests;" // Upgrade HTTP to HTTPS
+		"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+		"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+		"img-src 'self' data: https:; " +
+		"connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; " +
+		"font-src 'self'; " +
+		"object-src 'none'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'; " +
+		"frame-ancestors 'none'; " +
+		"block-all-mixed-content; " +
+		"upgrade-insecure-requests;"
 
 	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -125,19 +121,17 @@ func setSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 }
 
-// validateURL ensures the URL is safe to use
+// validateURL validates that a URL is HTTPS and from an allowed host.
 func validateURL(rawURL string) (*url.URL, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Only allow HTTPS
 	if parsedURL.Scheme != "https" {
 		return nil, fmt.Errorf("only HTTPS URLs are allowed")
 	}
 
-	// Validate hostname
 	allowedHosts := map[string]bool{
 		"api.open-meteo.com":           true,
 		"geocoding-api.open-meteo.com": true,
@@ -150,7 +144,7 @@ func validateURL(rawURL string) (*url.URL, error) {
 	return parsedURL, nil
 }
 
-// createHTTPClient creates a secure HTTP client with timeouts
+// createHTTPClient creates an HTTP client with specific timeouts.
 func createHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 10 * time.Second,
@@ -168,6 +162,7 @@ var (
 	metrics    = NewMetrics()
 )
 
+// WeatherResponse represents the weather data returned by the API.
 type WeatherResponse struct {
 	Temperature float64 `json:"temperature"`
 	Humidity    float64 `json:"humidity"`
@@ -178,6 +173,7 @@ type WeatherResponse struct {
 	RequestTime int64   `json:"request_time"`
 }
 
+// GeocodeResponse represents the geocoding data returned by the API.
 type GeocodeResponse struct {
 	Results []struct {
 		Latitude  float64 `json:"latitude"`
@@ -190,7 +186,6 @@ func main() {
 	logger.LogInfo("Starting weather server...")
 	server := jacked.New()
 
-	// Health check endpoint
 	server.GET("/api/health", func(c *jacked.Context) error {
 		setSecurityHeaders(c.Response)
 		health := map[string]interface{}{
@@ -206,22 +201,19 @@ func main() {
 		return c.JSON(200, health)
 	})
 
-	// Metrics SSE endpoint
 	server.GET("/api/metrics", func(c *jacked.Context) error {
 		setSecurityHeaders(c.Response)
 		c.Response.Header().Set("Content-Type", "text/event-stream")
 		c.Response.Header().Set("Cache-Control", "no-cache")
 		c.Response.Header().Set("Connection", "keep-alive")
-		c.Response.Header().Set("X-Accel-Buffering", "no") // Disable proxy buffering
+		c.Response.Header().Set("X-Accel-Buffering", "no")
 
-		// Create a channel to detect client disconnection
 		done := make(chan bool)
 		go func() {
 			<-c.Request.Context().Done()
 			done <- true
 		}()
 
-		// Send initial metrics
 		metricsData := map[string]interface{}{
 			"total_requests":   atomic.LoadUint64(&metrics.TotalRequests),
 			"failed_requests":  atomic.LoadUint64(&metrics.FailedRequests),
@@ -233,7 +225,6 @@ func main() {
 		fmt.Fprintf(c.Response, "data: %s\n\n", data)
 		c.Response.(http.Flusher).Flush()
 
-		// Keep connection alive and send updates
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
@@ -256,7 +247,6 @@ func main() {
 		}
 	})
 
-	// Weather endpoint
 	server.GET("/api/weather", func(c *jacked.Context) error {
 		start := time.Now()
 		logger.LogRequest(c.Request.Method, c.Request.URL.Path, c.Request.RemoteAddr)
@@ -272,10 +262,8 @@ func main() {
 
 		if city != "" {
 			logger.LogInfo("Geocoding city: %s", city)
-			// Geocode city to coordinates
 			geocodeURL := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1", url.QueryEscape(city))
 
-			// Validate URL
 			parsedURL, err := validateURL(geocodeURL)
 			if err != nil {
 				logger.LogError(err, "Invalid geocoding URL")
@@ -283,7 +271,6 @@ func main() {
 				return c.BadRequest("Invalid geocoding URL")
 			}
 
-			// Create request with context
 			req, err := http.NewRequestWithContext(c.Request.Context(), "GET", parsedURL.String(), nil)
 			if err != nil {
 				logger.LogError(err, "Failed to create geocoding request")
@@ -291,7 +278,6 @@ func main() {
 				return c.InternalServerError(fmt.Errorf("Failed to create geocoding request"))
 			}
 
-			// Add security headers
 			req.Header.Set("User-Agent", "WeatherApp/1.0")
 			req.Header.Set("Accept", "application/json")
 
@@ -336,11 +322,9 @@ func main() {
 			logger.LogInfo("Using coordinates: lat: %.6f, lon: %.6f", latitude, longitude)
 		}
 
-		// Fetch weather data from OpenMeteo
 		weatherURL := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%.6f&longitude=%.6f&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code", latitude, longitude)
 		logger.LogInfo("Fetching weather data from: %s", weatherURL)
 
-		// Validate URL
 		parsedURL, err := validateURL(weatherURL)
 		if err != nil {
 			logger.LogError(err, "Invalid weather URL")
@@ -348,7 +332,6 @@ func main() {
 			return c.BadRequest("Invalid weather URL")
 		}
 
-		// Create request with context
 		req, err := http.NewRequestWithContext(c.Request.Context(), "GET", parsedURL.String(), nil)
 		if err != nil {
 			logger.LogError(err, "Failed to create weather request")
@@ -356,7 +339,6 @@ func main() {
 			return c.InternalServerError(fmt.Errorf("Failed to create weather request"))
 		}
 
-		// Add security headers
 		req.Header.Set("User-Agent", "WeatherApp/1.0")
 		req.Header.Set("Accept", "application/json")
 
@@ -386,7 +368,6 @@ func main() {
 		weatherCode := int(current["weather_code"].(float64))
 		temperature := current["temperature_2m"].(float64)
 
-		// Ensure wind speed is a valid number
 		windSpeed, ok := current["wind_speed_10m"].(float64)
 		if !ok {
 			windSpeed = 0
@@ -407,13 +388,11 @@ func main() {
 		return c.JSON(200, weatherResponse)
 	})
 
-	// Serve static files
 	server.GET("/static/:filepath", func(c *jacked.Context) error {
 		setSecurityHeaders(c.Response)
 		filepath := c.Params.ByName("filepath")
 		path := "static/" + filepath
 
-		// Set proper MIME types
 		switch {
 		case strings.HasSuffix(path, ".css"):
 			c.Response.Header().Set("Content-Type", "text/css")
@@ -425,7 +404,6 @@ func main() {
 		return nil
 	})
 
-	// Serve index.html for root path
 	server.GET("/", func(c *jacked.Context) error {
 		logger.LogRequest(c.Request.Method, c.Request.URL.Path, c.Request.RemoteAddr)
 		setSecurityHeaders(c.Response)
@@ -440,6 +418,7 @@ func main() {
 	}
 }
 
+// getWeatherDescription returns a human-readable description for a given weather code.
 func getWeatherDescription(code int) string {
 	descriptions := map[int]string{
 		0:  "Clear sky",
