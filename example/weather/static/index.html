@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather App</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        :root {
+            --pico-font-size: 95%;
+            --pico-line-height: 1.4;
+            --pico-form-element-spacing-vertical: 0.75rem;
+            --pico-form-element-spacing-horizontal: 1rem;
+            --pico-spacing: 0.75rem;
+            --pico-typography-spacing-vertical: 0.75rem;
+        }
+        .container {
+            max-width: 550px;
+            margin: 0 auto;
+            padding: 0.75rem;
+        }
+        .loading {
+            text-align: center;
+            margin: 0.75rem 0;
+        }
+        .spinner {
+            width: 28px;
+            height: 28px;
+            margin: 0 auto;
+            border: 3px solid var(--muted-border-color);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+        .metrics-grid p:last-child {
+            grid-column: 1 / -1;
+            border-top: 1px solid var(--muted-border-color);
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+        }
+        footer {
+            margin-top: auto;
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 0.75rem;
+        }
+        h2 {
+            font-size: 1.2rem;
+        }
+        h3 {
+            font-size: 1.1rem;
+        }
+        .grid {
+            gap: 0.5rem;
+        }
+        article {
+            margin-bottom: 0.75rem;
+        }
+        #weatherInfo .grid {
+            font-size: 0.95rem;
+        }
+        input, button {
+            font-size: 0.95rem;
+            padding: 0.5rem 0.75rem;
+        }
+        button {
+            min-height: 2.5rem;
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <h1>Weather App</h1>
+        <form class="grid">
+            <input type="text" id="cityInput" placeholder="Enter city name" required>
+            <button type="button" id="searchBtn">Search</button>
+        </form>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading weather data...</p>
+        </div>
+
+        <article id="weatherInfo" style="display: none;">
+            <header>
+                <h2 id="cityName"></h2>
+            </header>
+            <div class="grid">
+                <div>Temperature: <strong id="temperature"></strong></div>
+                <div>Humidity: <strong id="humidity"></strong></div>
+                <div>Wind Speed: <strong id="windSpeed"></strong></div>
+                <div>Description: <strong id="description"></strong></div>
+                <div>Last Updated: <strong id="timestamp"></strong></div>
+                <div>Request Time: <strong id="requestTime"></strong></div>
+            </div>
+        </article>
+
+        <div id="error" role="alert" style="display: none;"></div>
+
+        <article>
+            <header>
+                <h3>Server Metrics</h3>
+            </header>
+            <div class="metrics-grid">
+                <p>Total Requests: <strong id="totalRequests">0</strong></p>
+                <p>Failed Requests: <strong id="failedRequests">0</strong></p>
+                <p>Average Response: <strong id="avgResponse">0</strong>s</p>
+                <p>Last Minute Hits: <strong id="lastMinuteHits">0</strong></p>
+                <p>Uptime: <strong id="uptime">0</strong></p>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <p>Built with <a href="https://github.com/Sudo-Ivan/jacked-api" target="_blank">Jacked API</a></p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html> 
