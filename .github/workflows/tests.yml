@@ -49,6 +49,7 @@ jobs:
 
     - name: Commit and push results
       run: |
+        git checkout -b test-results
         git add tests/
         git commit -m "Update test results for $(date +%Y-%m-%d)" || true
-        git push 
+        git push origin test-results 
