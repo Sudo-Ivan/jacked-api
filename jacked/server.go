@@ -95,6 +95,7 @@ type Config struct {
 	RateWindow            time.Duration
 	CleanupWindow         time.Duration
 	bufferPool            *bufferPool
+	Debug                 bool
 }
 
 // DefaultConfig returns a Config struct with default values.
@@ -120,6 +121,7 @@ func DefaultConfig() *Config {
 		RateWindow:            defaultRateWindow,
 		CleanupWindow:         defaultCleanupWindow,
 		bufferPool:            newBufferPool(defaultBufferPoolSize),
+		Debug:                 false,
 	}
 }
 
@@ -205,22 +207,26 @@ type ServerArgs struct {
 	Debug bool
 }
 
-// ParseArgs parses command line arguments
-func ParseArgs() *ServerArgs {
+// ParseArgs parses command line arguments from the provided string slice.
+func ParseArgs(arguments []string) (*ServerArgs, error) {
 	args := &ServerArgs{}
+	fs := flag.NewFlagSet("jacked-server", flag.ContinueOnError)
 
 	// Long flags
-	flag.StringVar(&args.Port, "port", "8080", "Port to listen on")
-	flag.StringVar(&args.Host, "host", "", "Host to listen on")
-	flag.BoolVar(&args.Debug, "debug", false, "Enable debug mode")
+	fs.StringVar(&args.Port, "port", "8080", "Port to listen on")
+	fs.StringVar(&args.Host, "host", "", "Host to listen on")
+	fs.BoolVar(&args.Debug, "debug", false, "Enable debug mode")
 
 	// Short flags
-	flag.StringVar(&args.Port, "p", "8080", "Port to listen on (shorthand)")
-	flag.StringVar(&args.Host, "h", "", "Host to listen on (shorthand)")
-	flag.BoolVar(&args.Debug, "d", false, "Enable debug mode (shorthand)")
+	fs.StringVar(&args.Port, "p", "8080", "Port to listen on (shorthand)")
+	fs.StringVar(&args.Host, "h", "", "Host to listen on (shorthand)")
+	fs.BoolVar(&args.Debug, "d", false, "Enable debug mode (shorthand)")
 
-	flag.Parse()
-	return args
+	err := fs.Parse(arguments)
+	if err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 // New creates a new Server instance with the default configuration.
@@ -564,21 +570,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ListenAndServe starts the server and listens for incoming connections on the specified address.
 func (s *Server) ListenAndServe(addr string) error {
-	args := ParseArgs()
+	listenAddr := addr
 
-	// Construct address from host and port
-	var listenAddr string
-	if args.Host != "" {
-		listenAddr = fmt.Sprintf("%s:%s", args.Host, args.Port)
-	} else {
-		listenAddr = ":" + args.Port
-	}
-
-	if args.Debug {
+	if s.config.Debug {
 		fmt.Printf("[DEBUG] Server configuration:\n")
-		fmt.Printf("  Host: %s\n", args.Host)
-		fmt.Printf("  Port: %s\n", args.Port)
-		fmt.Printf("  Debug: %v\n", args.Debug)
+		fmt.Printf("  Debug: %v\n", s.config.Debug)
 		fmt.Printf("  Listen Address: %s\n", listenAddr)
 	}
 
