@@ -6,15 +6,19 @@ A minimal API framework in Go, Built for performance and simplicity.
 
 - Minimal codebase and dependencies
 - Built-in middleware support with chain handling
-- JSON response helpers
+- JSON response helpers (`c.JSON`)
+- HTML Template Rendering (`c.Render`)
+- String Response Helper (`c.String`)
 - Thread-safe routing with request pooling
 - Graceful shutdown support
 - Clean and intuitive API
-- middleware chain and context handling
+- Middleware chain and context handling (`c.Next`, `c.Abort`)
+- Route Parameter Access (`c.Param`)
+- Query Parameter Helpers (`c.QueryString`, `c.QueryInt`, `c.QueryBool`)
+- Error Handling Helpers (`c.AbortWithError`, `c.NotFound`, `c.BadRequest`, `c.InternalServerError`)
 - Rate limiting
 
 ## Installation
-
 ```bash
 go install github.com/Sudo-Ivan/jacked-api@latest
 ```
@@ -152,9 +156,28 @@ c.Request.URL.Path
 // Access response writer
 c.Response.Write([]byte("Hello"))
 
+// String response
+c.String(200, "Hello, world!")
+
+// HTML Template Rendering
+// Assumes template files are parsed or accessible by the Render method.
+// c.Render(200, "template.html", data)
+
+// Parameter Handling
+routeName := c.Param("name") // Get path parameter by name
+queryName := c.QueryString("name", "Guest") // Get query parameter with default
+queryAge := c.QueryInt("age", 0)
+queryActive := c.QueryBool("active", false)
+
 // Middleware chain control
 c.Next()    // Call next handler
 c.Abort()   // Stop the handler chain
+
+// Error Handling Helpers
+// c.AbortWithError(statusCode, err) // Aborts and sends a JSON error response
+// c.NotFound("Resource not found")
+// c.BadRequest("Invalid input")
+// c.InternalServerError(err) // Logs server-side, sends generic error to client
 ```
 
 ### Concurrency
@@ -167,3 +190,4 @@ The framework includes built-in concurrency handling:
 ## License
 
 MIT 
+
