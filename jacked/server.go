@@ -3,6 +3,7 @@ package jacked
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -130,6 +131,31 @@ type Server struct {
 	config     *Config
 	bufferPool *bufferPool
 	limiter    *rateLimiter
+}
+
+// ServerArgs holds command line arguments for the server
+type ServerArgs struct {
+	Port  string
+	Host  string
+	Debug bool
+}
+
+// ParseArgs parses command line arguments
+func ParseArgs() *ServerArgs {
+	args := &ServerArgs{}
+
+	// Long flags
+	flag.StringVar(&args.Port, "port", "8080", "Port to listen on")
+	flag.StringVar(&args.Host, "host", "", "Host to listen on")
+	flag.BoolVar(&args.Debug, "debug", false, "Enable debug mode")
+
+	// Short flags
+	flag.StringVar(&args.Port, "p", "8080", "Port to listen on (shorthand)")
+	flag.StringVar(&args.Host, "h", "", "Host to listen on (shorthand)")
+	flag.BoolVar(&args.Debug, "d", false, "Enable debug mode (shorthand)")
+
+	flag.Parse()
+	return args
 }
 
 func New() *Server {
@@ -438,8 +464,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ListenAndServe(addr string) error {
+	args := ParseArgs()
+
+	// Construct address from host and port
+	var listenAddr string
+	if args.Host != "" {
+		listenAddr = fmt.Sprintf("%s:%s", args.Host, args.Port)
+	} else {
+		listenAddr = ":" + args.Port
+	}
+
+	if args.Debug {
+		fmt.Printf("[DEBUG] Server configuration:\n")
+		fmt.Printf("  Host: %s\n", args.Host)
+		fmt.Printf("  Port: %s\n", args.Port)
+		fmt.Printf("  Debug: %v\n", args.Debug)
+		fmt.Printf("  Listen Address: %s\n", listenAddr)
+	}
+
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              listenAddr,
 		Handler:           s,
 		ReadTimeout:       s.config.ReadTimeout,
 		WriteTimeout:      s.config.WriteTimeout,

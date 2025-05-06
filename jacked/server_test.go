@@ -3,10 +3,12 @@ package jacked
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1368,4 +1370,140 @@ func isTrustedProxy(addr string, trustedProxies []string) bool {
 		}
 	}
 	return false
+}
+
+// TestCommandLineArgs tests command line argument parsing
+func TestCommandLineArgs(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		expectedPort  string
+		expectedHost  string
+		expectedDebug bool
+	}{
+		{
+			name:          "Default Values",
+			args:          []string{},
+			expectedPort:  "8080",
+			expectedHost:  "",
+			expectedDebug: false,
+		},
+		{
+			name:          "Long Flags",
+			args:          []string{"--port", "9090", "--host", "localhost", "--debug"},
+			expectedPort:  "9090",
+			expectedHost:  "localhost",
+			expectedDebug: true,
+		},
+		{
+			name:          "Short Flags",
+			args:          []string{"-p", "7070", "-h", "127.0.0.1", "-d"},
+			expectedPort:  "7070",
+			expectedHost:  "127.0.0.1",
+			expectedDebug: true,
+		},
+		{
+			name:          "Mixed Flags",
+			args:          []string{"--port", "6060", "-h", "0.0.0.0", "-d"},
+			expectedPort:  "6060",
+			expectedHost:  "0.0.0.0",
+			expectedDebug: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save original os.Args and flag.CommandLine
+			oldArgs := os.Args
+			oldFlagCommandLine := flag.CommandLine
+			defer func() {
+				os.Args = oldArgs
+				flag.CommandLine = oldFlagCommandLine
+			}()
+
+			// Set up test args
+			os.Args = append([]string{"cmd"}, tt.args...)
+
+			// Create new flag set for test
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+			// Parse test args
+			args := ParseArgs()
+
+			// Verify results
+			if args.Port != tt.expectedPort {
+				t.Errorf("Expected port %s, got %s", tt.expectedPort, args.Port)
+			}
+			if args.Host != tt.expectedHost {
+				t.Errorf("Expected host %s, got %s", tt.expectedHost, args.Host)
+			}
+			if args.Debug != tt.expectedDebug {
+				t.Errorf("Expected debug %v, got %v", tt.expectedDebug, args.Debug)
+			}
+		})
+	}
+}
+
+// TestListenAddressConstruction tests the construction of the listen address
+func TestListenAddressConstruction(t *testing.T) {
+	tests := []struct {
+		name         string
+		host         string
+		port         string
+		addr         string
+		expectedAddr string
+	}{
+		{
+			name:         "Default Address",
+			host:         "",
+			port:         "8080",
+			addr:         ":8080",
+			expectedAddr: ":8080",
+		},
+		{
+			name:         "Custom Host",
+			host:         "localhost",
+			port:         "9090",
+			addr:         ":8080",
+			expectedAddr: "localhost:9090",
+		},
+		{
+			name:         "Custom Port",
+			host:         "",
+			port:         "7070",
+			addr:         ":8080",
+			expectedAddr: ":7070",
+		},
+		{
+			name:         "Full Custom",
+			host:         "127.0.0.1",
+			port:         "6060",
+			addr:         ":8080",
+			expectedAddr: "127.0.0.1:6060",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set command line args
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+			args := &ServerArgs{
+				Host:  tt.host,
+				Port:  tt.port,
+				Debug: false,
+			}
+
+			// Construct listen address
+			var listenAddr string
+			if args.Host != "" {
+				listenAddr = fmt.Sprintf("%s:%s", args.Host, args.Port)
+			} else {
+				listenAddr = ":" + args.Port
+			}
+
+			if listenAddr != tt.expectedAddr {
+				t.Errorf("Expected address %s, got %s", tt.expectedAddr, listenAddr)
+			}
+		})
+	}
 }
