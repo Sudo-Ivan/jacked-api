@@ -48,6 +48,37 @@ func main() {
 }
 ```
 
+## Command Line Flags
+
+Jacked API provides built-in command-line flag support:
+
+```bash
+# Long flags
+--port     Port to listen on (default: "8080")
+--host     Host to listen on (default: "")
+--debug    Enable debug mode (default: false)
+
+# Short flags
+-p         Port to listen on (shorthand)
+-h         Host to listen on (shorthand)
+-d         Enable debug mode (shorthand)
+```
+
+Example usage:
+```bash
+# Run with default settings
+go run main.go
+
+# Run on a specific port
+go run main.go -p 3000
+
+# Run with debug mode
+go run main.go -d
+
+# Run with all options
+go run main.go -h localhost -p 3000 -d
+```
+
 ## Docker Usage
 
 You can build and run the provided examples using Docker.
