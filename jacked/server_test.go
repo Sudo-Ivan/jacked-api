@@ -1813,3 +1813,203 @@ func TestInternalServerErrorHelper(t *testing.T) {
 		t.Errorf("Case 2: Expected error message '%s', got '%s'", http.StatusText(http.StatusInternalServerError), resp2["error"])
 	}
 }
+
+// TestRenderHTML tests the HTML rendering functionality
+func TestRenderHTML(t *testing.T) {
+	app := New()
+
+	// Define a struct for template data
+	type PageData struct {
+		Title string
+		Name  string
+		Value int
+	}
+
+	// Test case 1: Successful render
+	app.GET("/render-ok", func(c *Context) error {
+		data := PageData{Title: "Test Page", Name: "User", Value: 123}
+		return c.Render(http.StatusOK, "tests/test_template.html", data)
+	})
+
+	req1 := httptest.NewRequest("GET", "/render-ok", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Errorf("Render OK: Expected status %d, got %d", http.StatusOK, w1.Code)
+	}
+	if contentType := w1.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Errorf("Render OK: Expected Content-Type 'text/html; charset=utf-8', got '%s'", contentType)
+	}
+	bodyString := w1.Body.String()
+	if !strings.Contains(bodyString, "<title>Test Page</title>") {
+		t.Errorf("Render OK: Body does not contain expected title")
+	}
+	if !strings.Contains(bodyString, "<h1>Hello, User!</h1>") {
+		t.Errorf("Render OK: Body does not contain expected heading")
+	}
+	if !strings.Contains(bodyString, "<p>Value: 123</p>") {
+		t.Errorf("Render OK: Body does not contain expected value")
+	}
+
+	// Test case 2: Template not found
+	app.GET("/render-notfound", func(c *Context) error {
+		return c.Render(http.StatusOK, "non_existent_template.html", nil)
+	})
+
+	req2 := httptest.NewRequest("GET", "/render-notfound", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusInternalServerError { // Render returns 500 if template parsing fails
+		t.Errorf("Render NotFound: Expected status %d, got %d", http.StatusInternalServerError, w2.Code)
+	}
+	// Check if the error message is as expected (optional, depends on internal error structure)
+	var errResp map[string]string
+	if err := json.NewDecoder(w2.Body).Decode(&errResp); err == nil {
+		if !strings.Contains(errResp["error"], "template parsing error") {
+			t.Errorf("Render NotFound: Expected error message to contain 'template parsing error', got '%s'", errResp["error"])
+		}
+	} else {
+		t.Logf("Render NotFound: Could not decode error response body: %v", err)
+	}
+
+	// Test case 3: Render after headers written (should do nothing or return error, current impl returns nil)
+	app.GET("/render-after-write", func(c *Context) error {
+		_ = c.String(http.StatusOK, "already written")
+		return c.Render(http.StatusOK, "test_template.html", PageData{Title: "Test", Name: "Test", Value: 0})
+	})
+
+	req3 := httptest.NewRequest("GET", "/render-after-write", nil)
+	w3 := httptest.NewRecorder()
+	app.ServeHTTP(w3, req3)
+
+	if w3.Code != http.StatusOK { // Original status should remain
+		t.Errorf("Render AfterWrite: Expected status %d, got %d", http.StatusOK, w3.Code)
+	}
+	if w3.Body.String() != "already written" {
+		t.Errorf("Render AfterWrite: Body should be from the first write, got: %s", w3.Body.String())
+	}
+}
+
+// TestQueryParamHelpers tests the query parameter helper functions.
+func TestQueryParamHelpers(t *testing.T) {
+	app := New()
+
+	app.GET("/query", func(c *Context) error {
+		name := c.QueryString("name", "defaultName")
+		age := c.QueryInt("age", 30)
+		active := c.QueryBool("active", false)
+		missingInt := c.QueryInt("missingInt", -1)
+		missingBool := c.QueryBool("missingBool", true)
+		invalidInt := c.QueryInt("invalidInt", -99)
+		invalidBool := c.QueryBool("invalidBool", true) // Test with default true
+
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"name":        name,
+			"age":         age,
+			"active":      active,
+			"missingInt":  missingInt,
+			"missingBool": missingBool,
+			"invalidInt":  invalidInt,
+			"invalidBool": invalidBool,
+		})
+	})
+
+	tests := []struct {
+		name                string
+		url                 string
+		expectedName        string
+		expectedAge         int
+		expectedActive      bool
+		expectedMissingInt  int
+		expectedMissingBool bool
+		expectedInvalidInt  int
+		expectedInvalidBool bool
+	}{
+		{
+			name:                "All params present and valid",
+			url:                 "/query?name=JohnDoe&age=25&active=true&invalidInt=abc&invalidBool=xyz",
+			expectedName:        "JohnDoe",
+			expectedAge:         25,
+			expectedActive:      true,
+			expectedMissingInt:  -1,   // Default
+			expectedMissingBool: true, // Default
+			expectedInvalidInt:  -99,  // Default due to parse error
+			expectedInvalidBool: true, // Default due to parse error
+		},
+		{
+			name:                "Some params missing, others valid",
+			url:                 "/query?name=Jane&active=0",
+			expectedName:        "Jane",
+			expectedAge:         30,    // Default
+			expectedActive:      false, // "0" is false
+			expectedMissingInt:  -1,    // Default
+			expectedMissingBool: true,  // Default
+			expectedInvalidInt:  -99,   // Default
+			expectedInvalidBool: true,  // Default
+		},
+		{
+			name:                "Boolean variations",
+			url:                 "/query?active=FALSE&name=BoolTest", // Test case-insensitivity for bool
+			expectedName:        "BoolTest",
+			expectedAge:         30, // Default
+			expectedActive:      false,
+			expectedMissingInt:  -1,   // Default
+			expectedMissingBool: true, // Default
+			expectedInvalidInt:  -99,  // Default
+			expectedInvalidBool: true, // Default
+		},
+		{
+			name:                "All params missing (use defaults)",
+			url:                 "/query",
+			expectedName:        "defaultName",
+			expectedAge:         30,
+			expectedActive:      false,
+			expectedMissingInt:  -1,
+			expectedMissingBool: true,
+			expectedInvalidInt:  -99,
+			expectedInvalidBool: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("Expected status %d, got %d", http.StatusOK, w.Code)
+			}
+
+			var resp map[string]interface{}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("Failed to decode JSON response: %v", err)
+			}
+
+			if resp["name"] != tt.expectedName {
+				t.Errorf("Expected name '%s', got '%s'", tt.expectedName, resp["name"])
+			}
+			// JSON unmarshals numbers into float64 by default
+			if int(resp["age"].(float64)) != tt.expectedAge {
+				t.Errorf("Expected age %d, got %v", tt.expectedAge, resp["age"])
+			}
+			if resp["active"] != tt.expectedActive {
+				t.Errorf("Expected active %v, got %v", tt.expectedActive, resp["active"])
+			}
+			if int(resp["missingInt"].(float64)) != tt.expectedMissingInt {
+				t.Errorf("Expected missingInt %d, got %v", tt.expectedMissingInt, resp["missingInt"])
+			}
+			if resp["missingBool"] != tt.expectedMissingBool {
+				t.Errorf("Expected missingBool %v, got %v", tt.expectedMissingBool, resp["missingBool"])
+			}
+			if int(resp["invalidInt"].(float64)) != tt.expectedInvalidInt {
+				t.Errorf("Expected invalidInt %d, got %v", tt.expectedInvalidInt, resp["invalidInt"])
+			}
+			if resp["invalidBool"] != tt.expectedInvalidBool {
+				t.Errorf("Expected invalidBool %v, got %v", tt.expectedInvalidBool, resp["invalidBool"])
+			}
+		})
+	}
+}

@@ -10,9 +10,12 @@ import (
 	"math"
 	"net/http"
 	GoPath "path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"html/template"
 
 	json "github.com/goccy/go-json"
 	"github.com/julienschmidt/httprouter"
@@ -141,6 +144,47 @@ type Context struct {
 // Param returns the value of the URL parameter for the given key.
 func (c *Context) Param(key string) string {
 	return c.Params.ByName(key)
+}
+
+// QueryString returns the value of the query parameter for the given key.
+// If the key is not found, it returns the defaultValue.
+func (c *Context) QueryString(key string, defaultValue string) string {
+	if value := c.Request.URL.Query().Get(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// QueryInt returns the integer value of the query parameter for the given key.
+// If the key is not found or the value is not a valid integer, it returns the defaultValue.
+func (c *Context) QueryInt(key string, defaultValue int) int {
+	valueStr := c.Request.URL.Query().Get(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+// QueryBool returns the boolean value of the query parameter for the given key.
+// If the key is not found or the value is not a valid boolean, it returns the defaultValue.
+// It accepts "true", "1", "false", "0". Case-insensitive for "true" and "false".
+func (c *Context) QueryBool(key string, defaultValue bool) bool {
+	valueStr := c.Request.URL.Query().Get(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	valueStrLower := strings.ToLower(valueStr)
+	if valueStrLower == "true" || valueStr == "1" {
+		return true
+	}
+	if valueStrLower == "false" || valueStr == "0" {
+		return false
+	}
+	return defaultValue
 }
 
 // Server is the main server struct.
@@ -795,4 +839,42 @@ func (c *Context) InternalServerError(originalErr error) error {
 	}
 	defaultError := errors.New(http.StatusText(http.StatusInternalServerError))
 	return c.AbortWithError(http.StatusInternalServerError, defaultError)
+}
+
+// Render executes the given HTML template with the provided data and writes it to the response.
+// It sets the Content-Type to "text/html; charset=utf-8".
+func (c *Context) Render(status int, name string, data interface{}) error {
+	c.mu.Lock()
+	if c.statusWritten {
+		c.mu.Unlock()
+		return nil
+	}
+	c.mu.Unlock()
+
+	// Ensure templates are parsed. This is a basic example.
+	// In a real application, templates would likely be parsed once at startup.
+	tmpl, err := template.ParseFiles(name)
+	if err != nil {
+		// It's important to handle this error appropriately.
+		// For simplicity, we're returning an internal server error here.
+		// In a production app, you might log the error and return a more generic error to the client.
+		return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("template parsing error: %w", err))
+	}
+
+	// Template parsing succeeded. Now prepare to write the actual response.
+	c.mu.Lock()
+	if c.statusWritten {
+		c.mu.Unlock()
+		return fmt.Errorf("headers already written by concurrent operation before template render success path")
+	}
+	c.statusWritten = true
+	c.mu.Unlock()
+
+	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.Response.WriteHeader(status)
+
+	// Execute the template directly to the response writer.
+	// A buffer pool could be used here for complex scenarios or if you need to inspect the output
+	// before sending, but for direct rendering, this is more efficient.
+	return tmpl.Execute(c.Response, data)
 }
