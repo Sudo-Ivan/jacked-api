@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .container {
+            background: #34495e;
+            padding: 30px 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #1abc9c;
+            font-weight: 700;
+            font-size: 2.5em;
+            margin-bottom: 0.5em;
+        }
+        p {
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin-bottom: 1em;
+        }
+        .time {
+            font-size: 0.9em;
+            color: #bdc3c7;
+            margin-bottom: 1.5em;
+        }
+        .features-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .features-list li {
+            background-color: #2c3e50;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: transform 0.2s ease-in-out;
+        }
+        .features-list li:hover {
+            transform: translateX(5px);
+            background-color: #1abc9c;
+            color: #2c3e50;
+        }
+        footer {
+            width: 90%;
+            max-width: 600px;
+            margin-top: auto;
+            padding-top: 10px;
+            text-align: center;
+            font-size: 0.85em;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hello, {{.Name}}!</h1>
+        <p>{{.Message}}</p>
+        <p class="time">The current time is: {{.Time}}</p>
+
+        {{if .Features}}
+            <h2>Key Features:</h2>
+            <ul class="features-list">
+                {{range .Features}}
+                    <li>{{.}}</li>
+                {{end}}
+            </ul>
+        {{end}}
+    </div>
+    <footer>
+        <p>This page was rendered dynamically using the Jacked template engine.</p>
+    </footer>
+</body>
+</html>
