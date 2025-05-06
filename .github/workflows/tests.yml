@@ -2,10 +2,8 @@ name: Security and Load Tests
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 jobs:
   tests:
@@ -14,6 +12,13 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -30,22 +35,20 @@ jobs:
 
     - name: Setup directories and permissions
       run: |
-        mkdir -p tests
+        DATE_DIR=$(date +%Y-%m-%d)
+        mkdir -p tests/$DATE_DIR
         chmod +x ./scripts/*.sh
 
     - name: Run Security Tests
       run: |
-        ./scripts/security-test.sh > tests/security.md || true
+        ./scripts/security-test.sh > tests/$DATE_DIR/security.md || true
 
     - name: Run Load Tests
       run: |
-        ./scripts/load-test.sh > tests/load-test.md || true
+        ./scripts/load-test.sh > tests/$DATE_DIR/load-test.md || true
 
-    - name: Upload Test Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results
-        path: |
-          tests/security.md
-          tests/load-test.md
-        retention-days: 7 
+    - name: Commit and push results
+      run: |
+        git add tests/
+        git commit -m "Update test results for $(date +%Y-%m-%d)" || true
+        git push 

@@ -2,10 +2,8 @@ name: Benchmarks
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 jobs:
   benchmark:
@@ -14,6 +12,13 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -28,18 +33,27 @@ jobs:
 
     - name: Run Benchmarks
       run: |
-        mkdir -p benchmarks
-        go test -bench=. -benchmem -count=3 ./... > benchmarks/benchmark_results.txt || true
+        DATE_DIR=$(date +%Y-%m-%d)
+        mkdir -p benchmarks/$DATE_DIR
+        go test -bench=. -benchmem -count=3 ./... > benchmarks/$DATE_DIR/benchmark_results.txt || true
         
     - name: Compare Benchmarks
       uses: openpgpjs/github-action-pull-request-benchmark@v1
       with:
         name: 'Go Benchmarks'
         tool: 'go'
-        pr-benchmark-file-path: benchmarks/benchmark_results.txt
-        base-benchmark-file-path: benchmarks/benchmark_results.txt
+        pr-benchmark-file-path: benchmarks/$DATE_DIR/benchmark_results.txt
+        base-benchmark-file-path: benchmarks/$DATE_DIR/benchmark_results.txt
         comment-on-alert: true
         alert-threshold: '130%'
         fail-on-alert: true
         fail-threshold: '150%'
-        github-token: ${{ secrets.GITHUB_TOKEN }} 
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        auto-push-branch: 'benchmark-results'
+
+    - name: Commit and push results
+      run: |
+        git add benchmarks/
+        git commit -m "Update benchmark results for $(date +%Y-%m-%d)" || true
+        git push 
