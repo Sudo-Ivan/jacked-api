@@ -1,0 +1,40 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        check-latest: true
+
+    - name: Run Benchmarks
+      run: |
+        mkdir -p benchmarks
+        go test -bench=. -benchmem -count=6 ./... > benchmarks/benchmark_results.txt
+        
+    - name: Compare Benchmarks
+      uses: openpgpjs/github-action-pull-request-benchmark@v1
+      with:
+        name: 'Go Benchmarks'
+        tool: 'go'
+        pr-benchmark-file-path: benchmarks/benchmark_results.txt
+        base-benchmark-file-path: benchmarks/benchmark_results.txt
+        comment-on-alert: true
+        alert-threshold: '130%'
+        fail-on-alert: true
+        fail-threshold: '150%'
+        github-token: ${{ secrets.GITHUB_TOKEN }} 

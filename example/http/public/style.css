@@ -1,0 +1,15 @@
+body {
+    font-family: sans-serif;
+    padding: 2em;
+    color: blue; /* Make text blue */
+}
+
+h1 {
+    color: darkblue;
+}
+
+code {
+    background-color: #eee;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+} 
