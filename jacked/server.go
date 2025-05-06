@@ -3,6 +3,7 @@ package jacked
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,23 +19,37 @@ import (
 )
 
 const (
-	defaultReadTimeout   = 15 * time.Second
-	defaultWriteTimeout  = 15 * time.Second
-	defaultIdleTimeout   = 60 * time.Second
+	// defaultReadTimeout is the default duration for reading the entire request, including the body.
+	defaultReadTimeout = 15 * time.Second
+	// defaultWriteTimeout is the default duration before timing out writes of the response.
+	defaultWriteTimeout = 15 * time.Second
+	// defaultIdleTimeout is the default amount of time a connection may be idle before closing.
+	defaultIdleTimeout = 60 * time.Second
+	// defaultHeaderTimeout is the amount of time allowed to read request headers.
 	defaultHeaderTimeout = 5 * time.Second
-	defaultMaxAge        = 24 * time.Hour
+	// defaultMaxAge is the default duration for caching CORS preflight requests.
+	defaultMaxAge = 24 * time.Hour
 
-	defaultMaxConns      = 1000
-	defaultMaxHeaderSize = 1 << 20
-	defaultMaxBodySize   = 1 << 20
+	// defaultMaxConns is the default maximum number of concurrent connections.
+	defaultMaxConns = 1000
+	// defaultMaxHeaderSize is the default maximum size of request headers in bytes.
+	defaultMaxHeaderSize = 1 << 20 // 1 MB
+	// defaultMaxBodySize is the default maximum size of request body in bytes.
+	defaultMaxBodySize = 1 << 20 // 1 MB
 
-	defaultRateLimit     = 100
-	defaultBurstLimit    = 200
-	defaultRateWindow    = time.Second
+	// defaultRateLimit is the default number of requests allowed per RateWindow.
+	defaultRateLimit = 100
+	// defaultBurstLimit is the default maximum number of requests allowed in a burst.
+	defaultBurstLimit = 200
+	// defaultRateWindow is the default duration for rate limiting window.
+	defaultRateWindow = time.Second
+	// defaultCleanupWindow is the default duration for cleaning up expired rate limiters.
 	defaultCleanupWindow = 5 * time.Minute
 
+	// defaultCORSMaxAge is the default duration for caching CORS preflight requests.
 	defaultCORSMaxAge = 12 * time.Hour
-	corsSeparator     = ", "
+	// corsSeparator is the separator used to join CORS headers.
+	corsSeparator = ", "
 
 	statusNoContent             = http.StatusNoContent
 	statusUnauthorized          = http.StatusUnauthorized
@@ -55,6 +70,7 @@ const (
 	initialBufferSize     = 0
 )
 
+// Config holds the server configuration parameters.
 type Config struct {
 	ReadTimeout           time.Duration
 	WriteTimeout          time.Duration
@@ -78,6 +94,7 @@ type Config struct {
 	bufferPool            *bufferPool
 }
 
+// DefaultConfig returns a Config struct with default values.
 func DefaultConfig() *Config {
 	return &Config{
 		ReadTimeout:           defaultReadTimeout,
@@ -103,8 +120,10 @@ func DefaultConfig() *Config {
 	}
 }
 
+// HandlerFunc defines the handler function signature for middleware and route handlers.
 type HandlerFunc func(*Context) error
 
+// Context represents the context of the current HTTP request.
 type Context struct {
 	Request       *http.Request
 	Response      http.ResponseWriter
@@ -119,10 +138,12 @@ type Context struct {
 	statusWritten bool
 }
 
+// Param returns the value of the URL parameter for the given key.
 func (c *Context) Param(key string) string {
 	return c.Params.ByName(key)
 }
 
+// Server is the main server struct.
 type Server struct {
 	router     *httprouter.Router
 	middleware []HandlerFunc
@@ -158,10 +179,12 @@ func ParseArgs() *ServerArgs {
 	return args
 }
 
+// New creates a new Server instance with the default configuration.
 func New() *Server {
 	return NewWithConfig(DefaultConfig())
 }
 
+// NewWithConfig creates a new Server instance with the given configuration.
 func NewWithConfig(config *Config) *Server {
 	router := httprouter.New()
 	router.RedirectTrailingSlash = false
@@ -224,12 +247,14 @@ func NewWithConfig(config *Config) *Server {
 	return s
 }
 
+// Use adds middleware handlers to the server's middleware stack.
 func (s *Server) Use(handlers ...HandlerFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.middleware = append(s.middleware, handlers...)
 }
 
+// Handle registers a new request handler with the given method and path.
 func (s *Server) Handle(method, path string, handler HandlerFunc) {
 	wrappedHandler := func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
 		select {
@@ -303,28 +328,34 @@ func (s *Server) Handle(method, path string, handler HandlerFunc) {
 	s.router.Handle(method, path, wrappedHandler)
 }
 
+// GET registers a new GET request handler with the given path.
 func (s *Server) GET(path string, handler HandlerFunc) {
 	s.Handle(http.MethodGet, path, handler)
 }
 
+// POST registers a new POST request handler with the given path.
 func (s *Server) POST(path string, handler HandlerFunc) {
 	s.Handle(http.MethodPost, path, handler)
 }
 
+// PUT registers a new PUT request handler with the given path.
 func (s *Server) PUT(path string, handler HandlerFunc) {
 	s.Handle(http.MethodPut, path, handler)
 }
 
+// DELETE registers a new DELETE request handler with the given path.
 func (s *Server) DELETE(path string, handler HandlerFunc) {
 	s.Handle(http.MethodDelete, path, handler)
 }
 
+// StreamJSON decodes JSON from the given io.Reader and stores it in the value pointed to by v.
 func (c *Context) StreamJSON(r io.Reader, v interface{}) error {
 	decoder := json.NewDecoder(r)
 	decoder.UseNumber()
 	return decoder.Decode(v)
 }
 
+// JSON sends a JSON response with the given status code and payload.
 func (c *Context) JSON(status int, v interface{}) error {
 	c.mu.Lock()
 	if c.statusWritten {
@@ -350,6 +381,23 @@ func (c *Context) JSON(status int, v interface{}) error {
 	return encoder.Encode(v)
 }
 
+// String sends a string response with the given status code and message.
+func (c *Context) String(status int, message string) error {
+	c.mu.Lock()
+	if c.statusWritten {
+		c.mu.Unlock()
+		return nil
+	}
+	c.statusWritten = true
+	c.mu.Unlock()
+
+	c.Response.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	c.Response.WriteHeader(status)
+	_, err := c.Response.Write([]byte(message))
+	return err
+}
+
+// Next executes the next handler in the chain.
 func (c *Context) Next() error {
 	c.index++
 
@@ -373,6 +421,7 @@ func (c *Context) Next() error {
 	return handlerToCall(c)
 }
 
+// Abort prevents further handlers from being executed.
 func (c *Context) Abort() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -382,6 +431,7 @@ func (c *Context) Abort() {
 	c.aborted = true
 }
 
+// setSecurityHeaders sets common security headers on the response.
 func (c *Context) setSecurityHeaders() {
 	if !c.config.EnableSecurityHeaders {
 		return
@@ -402,6 +452,7 @@ func (c *Context) setSecurityHeaders() {
 	}
 }
 
+// isOriginAllowed checks if the given origin is allowed based on the server's configuration.
 func (c *Context) isOriginAllowed(origin string) bool {
 	if c.config == nil {
 		return false
@@ -414,6 +465,7 @@ func (c *Context) isOriginAllowed(origin string) bool {
 	return false
 }
 
+// setCORSHeaders sets the CORS headers on the response.
 func (c *Context) setCORSHeaders(origin string) {
 	c.Response.Header().Set("Access-Control-Allow-Origin", origin)
 	if c.config.AllowCredentials {
@@ -425,6 +477,7 @@ func (c *Context) setCORSHeaders(origin string) {
 	c.Response.Header().Set("Access-Control-Max-Age", c.config.MaxAge.String())
 }
 
+// corsMiddleware is a middleware that handles Cross-Origin Resource Sharing (CORS).
 func (s *Server) corsMiddleware() HandlerFunc {
 	return func(c *Context) error {
 		origin := c.Request.Header.Get("Origin")
@@ -448,6 +501,7 @@ func (s *Server) corsMiddleware() HandlerFunc {
 	}
 }
 
+// checkRequestSize checks if the request size exceeds the maximum allowed size.
 func (c *Context) checkRequestSize() error {
 	if c.Request.ContentLength > c.config.MaxRequestSize {
 		_ = c.JSON(statusRequestEntityTooLarge, map[string]string{
@@ -459,10 +513,12 @@ func (c *Context) checkRequestSize() error {
 	return nil
 }
 
+// ServeHTTP makes the server implement the http.Handler interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
+// ListenAndServe starts the server and listens for incoming connections on the specified address.
 func (s *Server) ListenAndServe(addr string) error {
 	args := ParseArgs()
 
@@ -494,6 +550,7 @@ func (s *Server) ListenAndServe(addr string) error {
 	return server.ListenAndServe()
 }
 
+// Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	svr := &http.Server{
 		Addr:              ":8080",
@@ -512,6 +569,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return svr.Shutdown(ctx)
 }
 
+// join concatenates a slice of strings into a single string with the given separator.
 func join(strs []string, sep string) string {
 	if len(strs) == 0 {
 		return ""
@@ -530,10 +588,12 @@ func join(strs []string, sep string) string {
 	return builder.String()
 }
 
+// bufferPool is a pool of bytes.Buffer objects.
 type bufferPool struct {
 	pool sync.Pool
 }
 
+// newBufferPool creates a new bufferPool.
 func newBufferPool(_ int) *bufferPool {
 	return &bufferPool{
 		pool: sync.Pool{
@@ -544,15 +604,18 @@ func newBufferPool(_ int) *bufferPool {
 	}
 }
 
+// get retrieves a bytes.Buffer from the pool.
 func (p *bufferPool) get() *bytes.Buffer {
 	return p.pool.Get().(*bytes.Buffer)
 }
 
+// put returns a bytes.Buffer to the pool.
 func (p *bufferPool) put(b *bytes.Buffer) {
 	b.Reset()
 	p.pool.Put(b)
 }
 
+// rateLimiter is a middleware that limits the rate of requests.
 type rateLimiter struct {
 	mu       sync.RWMutex
 	clients  map[string]*tokenBucket
@@ -560,6 +623,7 @@ type rateLimiter struct {
 	stopChan chan struct{}
 }
 
+// tokenBucket represents a token bucket for rate limiting.
 type tokenBucket struct {
 	tokens         float64
 	lastRefill     time.Time
@@ -568,6 +632,7 @@ type tokenBucket struct {
 	refillInterval time.Duration
 }
 
+// newRateLimiter creates a new rate limiter.
 func newRateLimiter(config *Config) *rateLimiter {
 	if config.RateLimit < 0 {
 		config.RateLimit = 0
@@ -594,6 +659,7 @@ func newRateLimiter(config *Config) *rateLimiter {
 	return rl
 }
 
+// cleanupLoop periodically cleans up the rate limiter.
 func (rl *rateLimiter) cleanupLoop() {
 	interval := rl.config.CleanupWindow
 	if interval <= 0 {
@@ -613,6 +679,7 @@ func (rl *rateLimiter) cleanupLoop() {
 	}
 }
 
+// cleanup removes expired token buckets from the rate limiter.
 func (rl *rateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -625,6 +692,7 @@ func (rl *rateLimiter) cleanup() {
 	}
 }
 
+// allow determines whether a request from the given IP address is allowed based on the rate limit.
 func (rl *rateLimiter) allow(ip string) bool {
 	if rl.config.RateLimit <= 0 {
 		return true
@@ -659,10 +727,12 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return false
 }
 
+// stop stops the rate limiter's cleanup loop.
 func (rl *rateLimiter) stop() {
 	close(rl.stopChan)
 }
 
+// rateLimitMiddleware is a middleware that limits the rate of requests based on IP address.
 func (s *Server) rateLimitMiddleware() HandlerFunc {
 	return func(c *Context) error {
 		ip := c.Request.RemoteAddr
@@ -673,4 +743,56 @@ func (s *Server) rateLimitMiddleware() HandlerFunc {
 		}
 		return c.Next()
 	}
+}
+
+// AbortWithError sends a JSON error response with the given status code and error, then aborts the context.
+// If the provided error is nil, it uses the default HTTP status text for the given code.
+// Otherwise, it uses the provided error's message. Care should be taken not to expose sensitive internal errors.
+func (c *Context) AbortWithError(statusCode int, err error) error {
+	c.mu.Lock()
+	if c.statusWritten {
+		c.mu.Unlock()
+		c.aborted = true
+		return fmt.Errorf("headers already written, cannot send error response for: %v", err)
+	}
+	c.aborted = true
+	c.mu.Unlock()
+
+	clientErrorMessage := http.StatusText(statusCode)
+	if err != nil {
+		clientErrorMessage = err.Error()
+	}
+
+	return c.JSON(statusCode, map[string]string{"error": clientErrorMessage})
+}
+
+// NotFound is a helper function to respond with a 404 Not Found error.
+// It calls AbortWithError internally. If message is empty, a default "Not Found" message is used.
+func (c *Context) NotFound(message string) error {
+	if message == "" {
+		message = http.StatusText(http.StatusNotFound)
+	}
+	return c.AbortWithError(http.StatusNotFound, errors.New(message))
+}
+
+// BadRequest is a helper function to respond with a 400 Bad Request error.
+// It calls AbortWithError internally. If message is empty, a default "Bad Request" message is used.
+func (c *Context) BadRequest(message string) error {
+	if message == "" {
+		message = http.StatusText(http.StatusBadRequest)
+	}
+	return c.AbortWithError(http.StatusBadRequest, errors.New(message))
+}
+
+// InternalServerError is a helper function to respond with a 500 Internal Server Error.
+// It calls AbortWithError internally. If the provided err is nil,
+// a default "Internal Server Error" message is used.
+// IMPORTANT: In a production environment, the actual `err` should be logged server-side.
+// Avoid exposing detailed internal error messages to the client.
+func (c *Context) InternalServerError(originalErr error) error {
+	if originalErr != nil {
+		return c.AbortWithError(http.StatusInternalServerError, originalErr)
+	}
+	defaultError := errors.New(http.StatusText(http.StatusInternalServerError))
+	return c.AbortWithError(http.StatusInternalServerError, defaultError)
 }

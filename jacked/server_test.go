@@ -1507,3 +1507,309 @@ func TestListenAddressConstruction(t *testing.T) {
 		})
 	}
 }
+
+// TestStringResponse tests the plain text response handling
+func TestStringResponse(t *testing.T) {
+	app := New()
+	app.GET("/text", func(c *Context) error {
+		return c.String(200, "Hello, World!")
+	})
+
+	req := httptest.NewRequest("GET", "/text", nil)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	if w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Errorf("Expected Content-Type text/plain; charset=utf-8, got %s", w.Header().Get("Content-Type"))
+	}
+
+	if w.Body.String() != "Hello, World!" {
+		t.Errorf("Expected body 'Hello, World!', got '%s'", w.Body.String())
+	}
+
+	// Test with a different status code and message
+	app.GET("/text-status", func(c *Context) error {
+		return c.String(201, "Created")
+	})
+
+	reqStatus := httptest.NewRequest("GET", "/text-status", nil)
+	wStatus := httptest.NewRecorder()
+	app.ServeHTTP(wStatus, reqStatus)
+
+	if wStatus.Code != 201 {
+		t.Errorf("Expected status 201, got %d", wStatus.Code)
+	}
+	if wStatus.Body.String() != "Created" {
+		t.Errorf("Expected body 'Created', got '%s'", wStatus.Body.String())
+	}
+
+	// Test empty message
+	app.GET("/text-empty", func(c *Context) error {
+		return c.String(204, "")
+	})
+
+	reqEmpty := httptest.NewRequest("GET", "/text-empty", nil)
+	wEmpty := httptest.NewRecorder()
+	app.ServeHTTP(wEmpty, reqEmpty)
+
+	if wEmpty.Code != 204 {
+		t.Errorf("Expected status 204, got %d", wEmpty.Code)
+	}
+	if wEmpty.Body.String() != "" {
+		t.Errorf("Expected empty body, got '%s'", wEmpty.Body.String())
+	}
+}
+
+// TestAbortWithError tests the AbortWithError functionality
+func TestAbortWithError(t *testing.T) {
+	app := New()
+
+	// Case 1: Abort with a specific error message
+	app.GET("/error1", func(c *Context) error {
+		return c.AbortWithError(http.StatusBadRequest, fmt.Errorf("Invalid input"))
+	})
+
+	req1 := httptest.NewRequest("GET", "/error1", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusBadRequest {
+		t.Errorf("Case 1: Expected status %d, got %d", http.StatusBadRequest, w1.Code)
+	}
+	var resp1 map[string]string
+	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
+		t.Fatalf("Case 1: Failed to decode JSON: %v", err)
+	}
+	if resp1["error"] != "Invalid input" {
+		t.Errorf("Case 1: Expected error message 'Invalid input', got '%s'", resp1["error"])
+	}
+
+	// Case 2: Abort with a nil error (should use default status text)
+	app.GET("/error2", func(c *Context) error {
+		return c.AbortWithError(http.StatusNotFound, nil)
+	})
+
+	req2 := httptest.NewRequest("GET", "/error2", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusNotFound {
+		t.Errorf("Case 2: Expected status %d, got %d", http.StatusNotFound, w2.Code)
+	}
+	var resp2 map[string]string
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("Case 2: Failed to decode JSON: %v", err)
+	}
+	if resp2["error"] != http.StatusText(http.StatusNotFound) {
+		t.Errorf("Case 2: Expected error message '%s', got '%s'", http.StatusText(http.StatusNotFound), resp2["error"])
+	}
+
+	// Case 3: Ensure context is aborted and subsequent handlers/final handler are not called
+	var handlerCalled, finalHandlerCalled bool
+	app.Use(func(c *Context) error {
+		// This middleware calls AbortWithError
+		_ = c.AbortWithError(http.StatusForbidden, fmt.Errorf("Forbidden by middleware"))
+		// This return should ideally not matter as AbortWithError is called, but good practice to return the error.
+		// However, AbortWithError itself returns an error, which would be the one propagated if not handled.
+		return nil // Or return the error from AbortWithError if you want to chain it
+	})
+	app.GET("/error-abort", func(c *Context) error {
+		finalHandlerCalled = true // This should not be set
+		t.Error("Final handler was called after AbortWithError in middleware")
+		return c.JSON(200, "ok")
+	})
+
+	// Add another middleware after the one that aborts, to ensure it's not called.
+	app.Use(func(c *Context) error {
+		handlerCalled = true // This should not be set
+		t.Error("Middleware after aborting middleware was called")
+		return c.Next()
+	})
+
+	req3 := httptest.NewRequest("GET", "/error-abort", nil)
+	w3 := httptest.NewRecorder()
+	app.ServeHTTP(w3, req3) // This will use the new app instance with the aborting middleware
+
+	if w3.Code != http.StatusForbidden {
+		t.Errorf("Case 3: Expected status %d, got %d", http.StatusForbidden, w3.Code)
+	}
+	var resp3 map[string]string
+	if err := json.NewDecoder(w3.Body).Decode(&resp3); err != nil {
+		t.Fatalf("Case 3: Failed to decode JSON: %v", err)
+	}
+	if resp3["error"] != "Forbidden by middleware" {
+		t.Errorf("Case 3: Expected error message 'Forbidden by middleware', got '%s'", resp3["error"])
+	}
+	if handlerCalled {
+		t.Error("Case 3: Handler after AbortWithError was called")
+	}
+	if finalHandlerCalled {
+		t.Error("Case 3: Final handler was called after AbortWithError in middleware")
+	}
+
+	// Case 4: Test AbortWithError when headers have already been written (e.g. by c.String first)
+	appAlreadyWritten := New() // Use a new app instance for a clean middleware chain
+	appAlreadyWritten.GET("/error-after-write", func(c *Context) error {
+		_ = c.String(http.StatusOK, "Initial content") // Write headers and body
+		// Attempt to call AbortWithError after response has started
+		err := c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("Critical error after write"))
+		if err == nil {
+			t.Error("Case 4: Expected an error from AbortWithError when headers already written, but got nil")
+		} else if !strings.Contains(err.Error(), "headers already written") {
+			t.Errorf("Case 4: Expected 'headers already written' error, got: %v", err)
+		}
+		return nil // The original handler finishes
+	})
+
+	req4 := httptest.NewRequest("GET", "/error-after-write", nil)
+	w4 := httptest.NewRecorder()
+	appAlreadyWritten.ServeHTTP(w4, req4)
+
+	if w4.Code != http.StatusOK { // The original status should remain
+		t.Errorf("Case 4: Expected status %d (original), got %d", http.StatusOK, w4.Code)
+	}
+	if w4.Body.String() != "Initial content" { // The original body should remain
+		t.Errorf("Case 4: Expected body '%s', got '%s'", "Initial content", w4.Body.String())
+	}
+	// We also need to check if the context was indeed aborted, though further handlers are not set up here.
+	// This is implicitly tested by ensuring AbortWithError returned the correct error.
+}
+
+// TestNotFoundHelper tests the c.NotFound helper method.
+func TestNotFoundHelper(t *testing.T) {
+	app := New()
+
+	// Case 1: NotFound with a custom message
+	app.GET("/notfound1", func(c *Context) error {
+		return c.NotFound("Custom not found message")
+	})
+
+	req1 := httptest.NewRequest("GET", "/notfound1", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusNotFound {
+		t.Errorf("Case 1: Expected status %d, got %d", http.StatusNotFound, w1.Code)
+	}
+	var resp1 map[string]string
+	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
+		t.Fatalf("Case 1: Failed to decode JSON: %v", err)
+	}
+	if resp1["error"] != "Custom not found message" {
+		t.Errorf("Case 1: Expected error message 'Custom not found message', got '%s'", resp1["error"])
+	}
+
+	// Case 2: NotFound with an empty message (should use default http.StatusText)
+	app.GET("/notfound2", func(c *Context) error {
+		return c.NotFound("")
+	})
+
+	req2 := httptest.NewRequest("GET", "/notfound2", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusNotFound {
+		t.Errorf("Case 2: Expected status %d, got %d", http.StatusNotFound, w2.Code)
+	}
+	var resp2 map[string]string
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("Case 2: Failed to decode JSON: %v", err)
+	}
+	if resp2["error"] != http.StatusText(http.StatusNotFound) {
+		t.Errorf("Case 2: Expected error message '%s', got '%s'", http.StatusText(http.StatusNotFound), resp2["error"])
+	}
+}
+
+// TestBadRequestHelper tests the c.BadRequest helper method.
+func TestBadRequestHelper(t *testing.T) {
+	app := New()
+
+	// Case 1: BadRequest with a custom message
+	app.GET("/badrequest1", func(c *Context) error {
+		return c.BadRequest("Invalid parameters provided")
+	})
+
+	req1 := httptest.NewRequest("GET", "/badrequest1", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusBadRequest {
+		t.Errorf("Case 1: Expected status %d, got %d", http.StatusBadRequest, w1.Code)
+	}
+	var resp1 map[string]string
+	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
+		t.Fatalf("Case 1: Failed to decode JSON: %v", err)
+	}
+	if resp1["error"] != "Invalid parameters provided" {
+		t.Errorf("Case 1: Expected error message 'Invalid parameters provided', got '%s'", resp1["error"])
+	}
+
+	// Case 2: BadRequest with an empty message (should use default http.StatusText)
+	app.GET("/badrequest2", func(c *Context) error {
+		return c.BadRequest("")
+	})
+
+	req2 := httptest.NewRequest("GET", "/badrequest2", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusBadRequest {
+		t.Errorf("Case 2: Expected status %d, got %d", http.StatusBadRequest, w2.Code)
+	}
+	var resp2 map[string]string
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("Case 2: Failed to decode JSON: %v", err)
+	}
+	if resp2["error"] != http.StatusText(http.StatusBadRequest) {
+		t.Errorf("Case 2: Expected error message '%s', got '%s'", http.StatusText(http.StatusBadRequest), resp2["error"])
+	}
+}
+
+// TestInternalServerErrorHelper tests the c.InternalServerError helper method.
+func TestInternalServerErrorHelper(t *testing.T) {
+	app := New()
+
+	// Case 1: InternalServerError with a specific error
+	app.GET("/servererror1", func(c *Context) error {
+		return c.InternalServerError(fmt.Errorf("A critical database error occurred"))
+	})
+
+	req1 := httptest.NewRequest("GET", "/servererror1", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusInternalServerError {
+		t.Errorf("Case 1: Expected status %d, got %d", http.StatusInternalServerError, w1.Code)
+	}
+	var resp1 map[string]string
+	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
+		t.Fatalf("Case 1: Failed to decode JSON: %v", err)
+	}
+	if resp1["error"] != "A critical database error occurred" {
+		t.Errorf("Case 1: Expected error message 'A critical database error occurred', got '%s'", resp1["error"])
+	}
+
+	// Case 2: InternalServerError with a nil error (should use default http.StatusText)
+	app.GET("/servererror2", func(c *Context) error {
+		return c.InternalServerError(nil)
+	})
+
+	req2 := httptest.NewRequest("GET", "/servererror2", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusInternalServerError {
+		t.Errorf("Case 2: Expected status %d, got %d", http.StatusInternalServerError, w2.Code)
+	}
+	var resp2 map[string]string
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("Case 2: Failed to decode JSON: %v", err)
+	}
+	if resp2["error"] != http.StatusText(http.StatusInternalServerError) {
+		t.Errorf("Case 2: Expected error message '%s', got '%s'", http.StatusText(http.StatusInternalServerError), resp2["error"])
+	}
+}

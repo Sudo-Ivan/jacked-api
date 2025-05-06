@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -64,12 +65,9 @@ func main() {
 
 		// Example auth check
 		if c.Request.Header.Get("Authorization") == "" {
-			if err := c.JSON(401, map[string]string{"error": "unauthorized"}); err != nil {
-				log.Printf("Error sending unauthorized response: %v", err)
-				return err
-			}
-			c.Abort() // Stop the handler chain
-			return nil
+			// AbortWithError sends the response and aborts the context.
+			// The returned error is from the c.JSON call within AbortWithError.
+			return c.AbortWithError(http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		}
 		return c.Next()
 	})
@@ -98,7 +96,7 @@ func main() {
 		// Use StreamJSON to parse the request body
 		if err := c.StreamJSON(c.Request.Body, &newItem); err != nil {
 			log.Printf("Error decoding item: %v", err)
-			return c.JSON(400, map[string]string{"error": "invalid request body"})
+			return c.BadRequest("invalid request body")
 		}
 		log.Printf("Received item: %+v", newItem)
 		// In a real app, you'd save this item to a database
@@ -123,7 +121,7 @@ func main() {
 		var updatedItem Item
 		if err := c.StreamJSON(c.Request.Body, &updatedItem); err != nil {
 			log.Printf("Error decoding item for update: %v", err)
-			return c.JSON(400, map[string]string{"error": "invalid request body"})
+			return c.BadRequest("invalid request body")
 		}
 		log.Printf("Updating item %s with data: %+v", itemID, updatedItem)
 		// In a real app, update the item in the database

@@ -280,7 +280,7 @@ func main() {
 			if err != nil {
 				logger.LogError(err, "Invalid geocoding URL")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(400, map[string]string{"error": "Invalid geocoding URL"})
+				return c.BadRequest("Invalid geocoding URL")
 			}
 
 			// Create request with context
@@ -288,7 +288,7 @@ func main() {
 			if err != nil {
 				logger.LogError(err, "Failed to create geocoding request")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(500, map[string]string{"error": "Failed to create geocoding request"})
+				return c.InternalServerError(fmt.Errorf("Failed to create geocoding request"))
 			}
 
 			// Add security headers
@@ -299,7 +299,7 @@ func main() {
 			if err != nil {
 				logger.LogError(err, "Failed to geocode city")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(500, map[string]string{"error": "Failed to geocode city"})
+				return c.InternalServerError(fmt.Errorf("Failed to geocode city"))
 			}
 			defer resp.Body.Close()
 
@@ -307,13 +307,13 @@ func main() {
 			if err := json.NewDecoder(resp.Body).Decode(&geocodeResp); err != nil {
 				logger.LogError(err, "Failed to parse geocoding response")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(500, map[string]string{"error": "Failed to parse geocoding response"})
+				return c.InternalServerError(fmt.Errorf("Failed to parse geocoding response"))
 			}
 
 			if len(geocodeResp.Results) == 0 {
 				logger.LogInfo("City not found: %s", city)
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(404, map[string]string{"error": "City not found"})
+				return c.NotFound("City not found")
 			}
 
 			latitude = geocodeResp.Results[0].Latitude
@@ -325,13 +325,13 @@ func main() {
 			if err != nil {
 				logger.LogError(err, "Invalid latitude")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(400, map[string]string{"error": "Invalid latitude"})
+				return c.BadRequest("Invalid latitude")
 			}
 			longitude, err = strconv.ParseFloat(lon, 64)
 			if err != nil {
 				logger.LogError(err, "Invalid longitude")
 				metrics.RecordRequest(time.Since(start), true)
-				return c.JSON(400, map[string]string{"error": "Invalid longitude"})
+				return c.BadRequest("Invalid longitude")
 			}
 			logger.LogInfo("Using coordinates: lat: %.6f, lon: %.6f", latitude, longitude)
 		}
@@ -345,7 +345,7 @@ func main() {
 		if err != nil {
 			logger.LogError(err, "Invalid weather URL")
 			metrics.RecordRequest(time.Since(start), true)
-			return c.JSON(400, map[string]string{"error": "Invalid weather URL"})
+			return c.BadRequest("Invalid weather URL")
 		}
 
 		// Create request with context
@@ -353,7 +353,7 @@ func main() {
 		if err != nil {
 			logger.LogError(err, "Failed to create weather request")
 			metrics.RecordRequest(time.Since(start), true)
-			return c.JSON(500, map[string]string{"error": "Failed to create weather request"})
+			return c.InternalServerError(fmt.Errorf("Failed to create weather request"))
 		}
 
 		// Add security headers
@@ -364,7 +364,7 @@ func main() {
 		if err != nil {
 			logger.LogError(err, "Failed to fetch weather data")
 			metrics.RecordRequest(time.Since(start), true)
-			return c.JSON(500, map[string]string{"error": "Failed to fetch weather data"})
+			return c.InternalServerError(fmt.Errorf("Failed to fetch weather data"))
 		}
 		defer resp.Body.Close()
 
@@ -372,14 +372,14 @@ func main() {
 		if err != nil {
 			logger.LogError(err, "Failed to read weather data")
 			metrics.RecordRequest(time.Since(start), true)
-			return c.JSON(500, map[string]string{"error": "Failed to read weather data"})
+			return c.InternalServerError(fmt.Errorf("Failed to read weather data"))
 		}
 
 		var weatherData map[string]interface{}
 		if err := json.Unmarshal(body, &weatherData); err != nil {
 			logger.LogError(err, "Failed to parse weather data")
 			metrics.RecordRequest(time.Since(start), true)
-			return c.JSON(500, map[string]string{"error": "Failed to parse weather data"})
+			return c.InternalServerError(fmt.Errorf("Failed to parse weather data"))
 		}
 
 		current := weatherData["current"].(map[string]interface{})
