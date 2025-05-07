@@ -108,11 +108,11 @@ func DefaultConfig() *Config {
 		MaxConns:              defaultMaxConns,
 		TrustedProxies:        []string{"127.0.0.1"},
 		AllowedOrigins:        []string{"*"},
-		AllowedMethods:        []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:        []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowedMethods:        []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		AllowedHeaders:        []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:        []string{"Content-Length"},
 		AllowCredentials:      true,
-		MaxAge:                defaultMaxAge,
+		MaxAge:                defaultCORSMaxAge,
 		MaxRequestSize:        defaultMaxBodySize,
 		EnableCompression:     true,
 		EnableSecurityHeaders: true,
@@ -576,6 +576,12 @@ func (s *Server) ListenAndServe(addr string) error {
 		fmt.Printf("[DEBUG] Server configuration:\n")
 		fmt.Printf("  Debug: %v\n", s.config.Debug)
 		fmt.Printf("  Listen Address: %s\n", listenAddr)
+		fmt.Printf("  CORS Allowed Origins: %v\n", s.config.AllowedOrigins)
+		fmt.Printf("  CORS Allowed Methods: %v\n", s.config.AllowedMethods)
+		fmt.Printf("  CORS Allowed Headers: %v\n", s.config.AllowedHeaders)
+		fmt.Printf("  CORS Exposed Headers: %v\n", s.config.ExposedHeaders)
+		fmt.Printf("  CORS Allow Credentials: %v\n", s.config.AllowCredentials)
+		fmt.Printf("  CORS Max Age: %v\n", s.config.MaxAge)
 	}
 
 	server := &http.Server{
